@@ -17,16 +17,17 @@ import os
 # # Read in the data, label it choose an engine number to examine
 
 
-def detect_anomaly(in_data,N_clusters,eng_id,threshold,N_features):
+def detect_anomaly(in_data,N_clusters,eng_id,threshold,N_features,n_min=60,steps=80):
 	"""
 	N_features: The number of features to extract from the PCA vector
+	n_min = 60 # Minimum place to start the line fit
+	steps = 80 # How many steps to take in fitting the line
 	"""
 	
 	# Some fixed parameters
 	savgol_window_size = 81
 	out_data = 'savgol_eng_'+str(eng_id)+"/"
-	n_min = 60 # Minimum place to start the line fit
-	steps = 80 # How many steps to take in fitting the line
+	#n_min = 60 # Minimum place to start the line fit
 	#threshold = 0.5 # In units of sigma
 	
 		
@@ -333,8 +334,11 @@ def detect_anomaly(in_data,N_clusters,eng_id,threshold,N_features):
 	
 
 	n_max = len(y1)
+	
 
 	dh = int(float(n_max-n_min)/float(steps))
+	
+	
 	
 	for N in range(n_min,n_max,dh):
 	    
@@ -356,10 +360,22 @@ def detect_anomaly(in_data,N_clusters,eng_id,threshold,N_features):
 	    sse_k.append(sse)
 	    Nk.append(N)
 	
+	plt.clf()
+	plt.title('Linear coefficient')
+	plt.plot(Nk,a1_k)
+	plt.ylabel('$a_1$',size=20)
+	plt.xlabel('Cycles',size=20)
+	plt.savefig(out_data+"linear_coeff_"+in_data+"_eng_"+str(int(eng_id))+'.pdf',bboxes='tight')    
+	
 	
 	plt.clf()
-	sse_k = np.gradient(sse_k)
-	sse2_k = np.abs(np.gradient(sse_k))
+	plt.plot(Nk,sse_k,'-o',color='blue')
+	plt.xlabel("Cycles", size=20)
+	plt.ylabel('Residuals',size=20)
+	plt.savefig(out_data+"residuals_"+in_data+"_eng_"+str(int(eng_id))+'.pdf',bboxes='tight')    
+	
+	plt.clf()
+	sse2_k = np.gradient(sse_k,2)
 	plt.title("Residual Acc. vs Cycle",size=20)
 	plt.plot(Nk,sse2_k,'-o',color='green')
 	plt.xlabel("Cycles", size=20)
@@ -371,23 +387,27 @@ def detect_anomaly(in_data,N_clusters,eng_id,threshold,N_features):
 	#============================================================================================
 	# Now we determine the range of the anomalies	
 	# Apply the standard Scaler to the SSE-acceleration data
-	#scaler = StandardScaler()
-	#scaler.fit(sse2_k.reshape(-1,1))
-	#sse2_k_scaled = scaler.transform(sse2_k.reshape(-1,1)).flatten()
 	sse2_k_median = np.median(sse2_k)
 	sse2_k_std = np.std(sse2_k)
 	sse2_k_scaled = np.abs(sse2_k-sse2_k_median)/sse2_k_std
+	
+	# Now normalize from zero to one
+	sse2_k_max = np.max(sse2_k_scaled)
+	sse2_k_min = np.min(sse2_k_scaled)
+	sse2_k_scaled = (sse2_k_scaled-sse2_k_min)/(sse2_k_max-sse2_k_min)
 	
 	# Define a possible threshold for the failure region
 	Nk_anom =[]
 	
 	for i in range(len(sse2_k)):
 	    
+	    # Find all points that have an anomaly
 	    if(sse2_k_scaled[i] >= threshold):
 	        Nk_anom.append(Nk[i])
 	
 	if(len(Nk_anom)!=0):
 		plt.clf()
+		[plt.axvline(Ni,alpha=1.0,color='red',linewidth=2.0) for Ni in Nk_anom]
 		plt.axvspan(Nk_anom[0],Nk_anom[-1],alpha=0.2, color='purple')
 		plt.plot(Nk,sse2_k_scaled,'-o',color='green')
 		plt.title("Residual Acc. Scaled vs Cycle",size=20)
@@ -403,7 +423,8 @@ def detect_anomaly(in_data,N_clusters,eng_id,threshold,N_features):
 		plt.plot(eng1_data_ind.iloc[:,k].values)
 		
 		if(len(Nk_anom)!=0):
-			plt.axvspan(Nk_anom[0],Nk_anom[-1],alpha=0.2, color='purple')
+			[plt.axvline(Ni,alpha=0.5,color='red',linewidth=3.0) for Ni in Nk_anom]
+		#	plt.axvspan(Nk_anom[0],Nk_anom[-1],alpha=0.2, color='purple')
 		
 		plt.xlabel("Cycles",size=20)
 		plt.legend()
@@ -413,10 +434,11 @@ def detect_anomaly(in_data,N_clusters,eng_id,threshold,N_features):
 	plt.clf()
 	plt.plot(x,y1)
 	if(len(Nk_anom)!=0):
-	    plt.axvspan(Nk_anom[0],Nk_anom[-1],alpha=0.2, color='purple')
+		[plt.axvline(Ni,alpha=0.3,color='red',linewidth=3.0) for Ni in Nk_anom]
+		#plt.axvspan(Nk_anom[0],Nk_anom[-1],alpha=0.2, color='purple')
 	plt.ylabel("PCA1 filter",size=20)
 	plt.xlabel("Cycles",size=20)
-	plt.savefig(out_data+"PCA_"+str(N_ind_sensors_name[k])+in_data+"_eng_"+str(int(eng_id))+'.pdf',bboxes='tight')
+	plt.savefig(out_data+"PCA_"+in_data+"_eng_"+str(int(eng_id))+'.pdf',bboxes='tight')
 	
 	y_feature = x[-1]-x[N_features]
 	x_feature = y1[0:N_features]
